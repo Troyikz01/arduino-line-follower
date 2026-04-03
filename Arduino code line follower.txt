@@ -1,0 +1,88 @@
+// --- MOTOR PINS ---
+const int ENA = 10; const int IN1 = 9; const int IN2 = 8;
+const int IN3 = 7;  const int IN4 = 6; const int ENB = 5;
+
+// --- SENSOR PINS ---
+const int irLeft   = A2; // Far Left
+const int irCenter = A0; // Center (or Left-Center)
+const int irRight  = A1; // Right (or Right-Center)
+// Note: If you have a 4th sensor, you can add 'const int irFarRight = A3;'
+
+// --- SPEED SETTINGS ---
+int baseSpeed  = 150; 
+int turnSlow   = 0;   // Slow down the inner wheel significantly for better grip
+int turnFast   = 200; // Speed up the outer wheel
+int spinSpeed  = 180; // For emergency recovery
+
+int lastSide = 0; // 1 = Left, 2 = Right
+
+void setup() {
+  pinMode(ENA, OUTPUT); pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT); pinMode(ENB, OUTPUT);
+  
+  pinMode(irLeft, INPUT);
+  pinMode(irCenter, INPUT);
+  pinMode(irRight, INPUT);
+}
+
+void loop() {
+  // Read Sensors (0 = Black Line, 1 = White Floor)
+  int L = (analogRead(irLeft) < 500) ? 0 : 1;
+  int C = (analogRead(irCenter) < 500) ? 0 : 1;
+  int R = (analogRead(irRight) < 500) ? 0 : 1;
+
+  // --- LOGIC ---
+
+  // 1. STRAIGHT: Center (A0) and Right (A1) both see the line or just Center
+  if (C == 0 && R == 0) {
+    moveForward();
+  } 
+  // 2. DRIFTED RIGHT: Only the Left sensor (A2) sees black -> Turn LEFT
+  else if (L == 0 && R == 1) {
+    lastSide = 1;
+    hardLeft();
+  }
+  // 3. DRIFTED LEFT: Only the Right sensor (A1) sees black -> Turn RIGHT
+  else if (R == 0 && L == 1) {
+    lastSide = 2;
+    hardRight();
+  }
+  // 4. CENTER ONLY: Keep moving forward
+  else if (C == 0) {
+    moveForward();
+  }
+  // 5. LOST LINE: Use memory to find it
+  else {
+    if (lastSide == 1) hardLeft();
+    else if (lastSide == 2) hardRight();
+    else stopMotors();
+  }
+}
+
+// --- DIRECTION FUNCTIONS ---
+
+void moveForward() {
+  analogWrite(ENA, baseSpeed);
+  analogWrite(ENB, baseSpeed);
+  digitalWrite(IN1, LOW);  digitalWrite(IN2, HIGH); 
+  digitalWrite(IN3, LOW);  digitalWrite(IN4, HIGH);
+}
+
+void hardLeft() {
+  analogWrite(ENA, spinSpeed); 
+  analogWrite(ENB, spinSpeed);  
+  digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);  // Reverse Left
+  digitalWrite(IN3, LOW);  digitalWrite(IN4, HIGH); // Forward Right
+}
+
+void hardRight() {
+  analogWrite(ENA, spinSpeed);  
+  analogWrite(ENB, spinSpeed); 
+  digitalWrite(IN1, LOW);  digitalWrite(IN2, HIGH); // Forward Left
+  digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);  // Reverse Right
+}
+
+void stopMotors() {
+  analogWrite(ENA, 0);
+  analogWrite(ENB, 0);
+}
