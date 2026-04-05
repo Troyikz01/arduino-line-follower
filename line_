@@ -1,0 +1,132 @@
+#include <NewPing.h> 
+#include <Servo.h>
+
+// --- L298N MOTOR PINS ---
+const int ENA = 10; const int IN1 = 9; const int IN2 = 8; // Left
+const int IN3 = 7;  const int IN4 = 6; const int ENB = 5; // Right
+
+// --- SENSOR PINS ---
+#define TRIGGER_PIN A4
+#define ECHO_PIN A5
+#define irRight  A0  // Right Sensor
+#define irCenter A1  // Center Sensor
+#define irLeft   A2  // Left Sensor
+
+// --- TUNING ---
+int baseSpeed = 180;  
+int snapSpeed = 255;  
+int threshold = 600;  
+
+Servo servo;
+NewPing sonar(TRIGGER_PIN, ECHO_PIN, 50);
+
+int distance = 0;
+int leftDistance, rightDistance;
+boolean object;
+
+void setup() {
+  Serial.begin(9600);
+  
+  pinMode(ENA, OUTPUT); pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT); pinMode(ENB, OUTPUT);
+  
+  pinMode(irRight, INPUT);
+  pinMode(irCenter, INPUT);
+  pinMode(irLeft, INPUT);
+  
+  servo.attach(4);
+  servo.write(90); 
+  delay(2000);
+}
+
+void loop() {
+  // 0 = Black Line, 1 = White Space
+  int R = (analogRead(irRight) < threshold) ? 0 : 1;
+  int C = (analogRead(irCenter) < threshold) ? 0 : 1;
+  int L = (analogRead(irLeft) < threshold) ? 0 : 1;
+
+  // --- REFINED 3-SENSOR NAVIGATION LOGIC ---
+  
+  if (L == 0) {
+    // LEFT sensor detects black: Pivot left to bring Center back to line
+    moveLeft();
+  }
+  else if (R == 0) {
+    // RIGHT sensor detects black: Pivot right to bring Center back to line
+    moveRight();
+  }
+  else if (C == 0) {
+    // CENTER is on the line: Move forward + Obstacle detection
+    objectAvoid(); 
+  }
+  else {
+    // If all are white (lost the line), move forward slowly or search
+    objectAvoid();
+  }
+}
+
+void objectAvoid() {
+  distance = getDistance();
+  if (distance <= 15 && distance > 0) {
+    Stop();
+    lookLeft();
+    lookRight();
+    if (rightDistance <= leftDistance) { 
+      object = true; // Left is clearer
+      turn(); 
+    } 
+    else { 
+      object = false; // Right is clearer
+      turn(); 
+    }
+  } 
+  else {
+    moveForward();
+  }
+}
+
+int getDistance() {
+  delay(50);
+  int cm = sonar.ping_cm();
+  return (cm == 0) ? 100 : cm;
+}
+
+void lookLeft() { servo.write(150); delay(500); leftDistance = getDistance(); servo.write(90); }
+void lookRight() { servo.write(30); delay(500); rightDistance = getDistance(); servo.write(90); }
+
+// --- MOVEMENT COMMANDS ---
+
+void moveForward() {
+  analogWrite(ENA, baseSpeed); 
+  analogWrite(ENB, baseSpeed);
+  digitalWrite(IN1, LOW);  digitalWrite(IN2, HIGH); // Left Forward
+  digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);  // Right Forward
+}
+
+void Stop() {
+  analogWrite(ENA, 0); analogWrite(ENB, 0);
+  digitalWrite(IN1, LOW); digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW); digitalWrite(IN4, LOW);
+}
+
+void moveLeft() {
+  // Pivot turn: Left wheel back, Right wheel forward
+  analogWrite(ENA, snapSpeed); analogWrite(ENB, snapSpeed);
+  digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);  
+  digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW); 
+}
+
+void moveRight() {
+  // Pivot turn: Left wheel forward, Right wheel back
+  analogWrite(ENA, snapSpeed); analogWrite(ENB, snapSpeed);
+  digitalWrite(IN1, LOW);  digitalWrite(IN2, HIGH); 
+  digitalWrite(IN3, LOW);  digitalWrite(IN4, HIGH); 
+}
+
+void turn() {
+  if (object == false) { // Pivot Right to avoid obstacle
+    moveRight(); delay(600); moveForward(); delay(1000); moveLeft(); delay(600);
+  } else { // Pivot Left to avoid obstacle
+    moveLeft(); delay(600); moveForward(); delay(1000); moveRight(); delay(600);
+  }
+}
